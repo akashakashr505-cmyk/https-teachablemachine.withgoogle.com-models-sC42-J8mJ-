@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Attendance System</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background-color: #f0f2f5; }
+        h1 { color: #333; }
+        #main-container { display: flex; justify-content: center; gap: 20px; padding: 20px; flex-wrap: wrap; }
+        #webcam-container { border: 5px solid #fff; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; }
+        #attendance-list { background: white; width: 300px; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: left; }
+        .student-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .student-item:last-child { border-bottom: none; }
+        .timestamp { font-size: 0.8em; color: #888; }
+        .status-badge { background-color: #4CAF50; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; margin-top: 20px; }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <h1>📸 Smart Attendance System</h1>
+    <button type="button" onclick="init()">Start Camera</button>
+    <div id="label-container"></div>
+
+    <div id="main-container">
+        <div id="webcam-container"></div>
+        
+        <div id="attendance-list">
+            <h3>📝 Present Today</h3>
+            <div id="list-items"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <script type="text/javascript">
+        // ---------------------------------------------------------
+        // TODO: PASTE YOUR TEACHABLE MACHINE MODEL URL HERE
+        const URL = "https://teachablemachine.withgoogle.com/models/YOUR_MODEL_ID_HERE/";
+        // ---------------------------------------------------------
+
+        let model, webcam, labelContainer, maxPredictions;
+        
+        // We use a Set to ensure we don't mark the same person twice
+        let presentStudents = new Set(); 
+
+        async function init() {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            // Load the model and metadata
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            // Setup the webcam
+            const flip = true; 
+            webcam = new tmImage.Webcam(300, 300, flip); 
+            await webcam.setup(); 
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            // Append webcam canvas to the DOM
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+        }
+
+        async function loop() {
+            webcam.update(); 
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+
+            // We only care about the highest probability
+            let highestProb = 0;
+            let bestClass = "";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].probability > highestProb) {
+                    highestProb = prediction[i].probability;
+                    bestClass = prediction[i].className;
+                }
+            }
+
+            // LOGIC: If confidence is high (> 90%) and it's not "Nobody" or already marked
+            if (highestProb > 0.90 && bestClass !== "Nobody" && bestClass !== "Empty") {
+                markAttendance(bestClass);
+            }
+        }
+
+        function markAttendance(name) {
+            if (presentStudents.has(name)) return; // Already marked
+
+            // Add to Set
+            presentStudents.add(name);
+
+            // Add to UI
+            const list = document.getElementById("list-items");
+            const item = document.createElement("div");
+            item.className = "student-item";
+            
+            const time = new Date().toLocaleTimeString();
+            
+            item.innerHTML = `
+                <span>${name}</span>
+                <span class="timestamp">${time} <span class="status-badge">Present</span></span>
+            `;
+            list.appendChild(item);
+            
+            // Optional: Speak the name
+            let utterance = new SpeechSynthesisUtterance("Welcome " + name);
+            window.speechSynthesis.speak(utterance);
+        }
+    </script>
+</body>
+</html>
